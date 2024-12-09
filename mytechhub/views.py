@@ -1,17 +1,15 @@
 from django.template import loader
 from django.http import HttpResponse
 
-def teste(request):
-    template = loader.get_template('paginateste.html')
-    return HttpResponse(template.render())
-
-def testeparametros(request):
-    template = loader.get_template('testeparametros.html')
+def techhub(request):
+    template = loader.get_template('techhub.html')
     context = {
-        "nome": "José Silva",
-        "idade": 30,
-        "email": "jose.silva@email.com",
-        "telefone": "3333-1234",
+        "nome_empresa": "TechHub",
+        "slogan": "O lugar perfeito para encontrar seus periféricos!",
+        "contato": {
+            "email": "contato@techub.com",
+            "telefone": "(00) 00000-0000"
+        },
         "usuarioativo": True
     }
     return HttpResponse(template.render(context, request))

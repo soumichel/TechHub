@@ -4,6 +4,14 @@ Este tutorial irá guiá-lo para configurar e executar o projeto em sua máquina
 
 ---
 
+## **Visão Geral do Projeto**
+
+![BD TechHub](images/techHub.png)
+
+TechHub é um e-commerce desenvolvido como parte de um projeto acadêmico para a disciplina de Programação Web da UFLA. O sistema permite a gestão de produtos, categorias, pedidos e fornecedores, além de oferecer um ambiente administrativo robusto.
+
+---
+
 ## **1. Pré-requisitos**
 
 Antes de começar, certifique-se de que os seguintes itens estão instalados em sua máquina:
@@ -118,6 +126,6 @@ Parabéns! O projeto está configurado e rodando em sua máquina. Agora você po
 
 ---
 
-Se precisar de mais ajuda, entre em contato com o responsável pelo projeto! 😊
+© Projeto desenvolvido por Bernardo Nunes Leris e Michel Alexandrino de Souza para a disciplina Programação Web, realizada na Universidade Federal de Lavras.
 
 ---
