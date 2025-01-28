@@ -37,4 +37,3 @@ class OrderItemAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'product', 'quantity', 'price', 'subtotal')
     search_fields = ('order__id', 'product__name')
     list_filter = ('order__created_at',)
-    
