@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastrar Produto</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+</head>
+<body>
+    <div class="container">
+        <h1>Cadastrar Produto</h1>
+        <input type="text" id="name" placeholder="Nome do produto" required>
+        <input type="text" id="description" placeholder="Descrição" required>
+        <input type="number" id="price" placeholder="Preço" required>
+        <input type="number" id="stock" placeholder="Estoque" required>
+        <button onclick="registerProduct()">Cadastrar Produto</button>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
