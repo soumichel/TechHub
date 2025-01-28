@@ -60,3 +60,36 @@ def user_orders(request):
     orders = Order.objects.filter(user=user)
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_order(request):
+    """Criação de um novo pedido pelo usuário logado."""
+
+    user = request.user
+    if user.is_supplier:
+        return Response({"detail": "Fornecedores não podem criar pedidos."}, status=403)
+
+    # Criação do pedido
+    order = Order.objects.create(user=user, status="Pending")
+
+    # Adicionar itens ao pedido
+    for item_data in request.data.get('items', []):
+        product = Product.objects.get(id=item_data['product_id'])
+        quantity = item_data['quantity']
+        price = product.price
+
+        # Criar o item de pedido
+        OrderItem.objects.create(
+            order=order,
+            product=product,
+            quantity=quantity,
+            price=price,
+            subtotal=price * quantity
+        )
+
+    # Serializar o pedido
+    order_serializer = OrderSerializer(order)
+
+    return Response(order_serializer.data, status=201)
