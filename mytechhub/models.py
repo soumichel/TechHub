@@ -2,31 +2,47 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 class User(AbstractUser):
-    """Modelo de usuário personalizado para adicionar o campo 'is_supplier'."""
     is_supplier = models.BooleanField(default=False)
 
-class SupplierProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
-    company_name = models.CharField(max_length=255)
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name="custom_user_groups",  # Evita conflito
+        blank=True
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name="custom_user_permissions",  # Evita conflito
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.username} ({'Fornecedor' if self.is_supplier else 'Comprador'})"
+
+
+class Supplier(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="supplier")
+    name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
     address = models.TextField()
 
     def __str__(self):
-        return f"Perfil de {self.user.username} ({self.company_name})"
+        return self.name  # Exibe o nome do fornecedor
+
 
 class Category(models.Model):
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, unique=True)
 
     def __str__(self):
-        return self.name
+        return self.name  # Exibe o nome da categoria
+
 
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField()
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    supplier = models.ForeignKey(SupplierProfile, on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products")
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="products")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -90,4 +106,4 @@ class OrderItem(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name}"
+        return f"{self.quantity} x {self.product.name} (Pedido {self.order.id})"
