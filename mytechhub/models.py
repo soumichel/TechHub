@@ -30,17 +30,54 @@ class Product(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.name} - {self.supplier.company_name}"
+        return f"{self.name} (Fornecedor: {self.supplier.name}, Categoria: {self.category.name})"
 
+
+# Carrinho de Compras (Cart)
+class Cart(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cart")
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=50, choices=[("Pending", "Pendente"), ("Completed", "Finalizado")], default="Pending")
+
+    def __str__(self):
+        return f"Carrinho de {self.user.username}"
+
+# Item do Carrinho (CartItem)
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, editable=False)
+
+    def save(self, *args, **kwargs):
+        self.subtotal = self.quantity * self.price
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.quantity} x {self.product.name} (Carrinho de {self.cart.user.username})"
+
+
+# Pedido (Order)
 class Order(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    status = models.CharField(max_length=50, choices=[('Pending', 'Pendente'), ('Completed', 'Concluído'), ('Cancelled', 'Cancelado')])
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
+    status = models.CharField(max_length=50, choices=[
+        ("Pending", "Pendente"),
+        ("Processing", "Em Processamento"),
+        ("Completed", "Concluído"),
+        ("Cancelled", "Cancelado"),
+    ], default="Pending")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Pedido {self.id} - {self.status}"
+        return f"Pedido {self.id} - Status: {self.get_status_display()}"
 
+    def total(self):
+        return sum(item.subtotal for item in self.items.all())
+
+
+# Item de Pedido (OrderItem)
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)

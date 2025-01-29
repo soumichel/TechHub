@@ -1,182 +1,176 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Product, Order, OrderItem, SupplierProfile, User
-from .serializers import ProductSerializer, OrderSerializer, SupplierProfileSerializer, UserCreateSerializer
+from .models import User, Order, Cart, CartItem, Product
+from .forms import CustomUserCreationForm, ProductForm
 
-
-def techhub(request):
-    """Página principal para usuários logados."""
-    user = request.user
-    template = 'techhub.html'
-    context = {
-        "nome_empresa": "TechHub",
-        "slogan": "O lugar perfeito para encontrar seus periféricos!",
-        "usuarioativo": user.is_active,
-        "perfil": "Fornecedor" if user.is_supplier else "Usuário Comum",
-        "mensagem": (
-            "Bem-vindo à área do fornecedor! Aqui você pode gerenciar seus produtos."
-            if user.is_supplier
-            else "Bem-vindo à TechHub! Aqui você pode explorar produtos e gerenciar seus pedidos."
-        ),
-    }
-
-    if user.is_supplier:
-        context["produtos"] = Product.objects.filter(supplier=user.supplier)
+# Registro de usuário
+def register(request):
+    if request.method == "POST":
+        form = CustomUserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save(commit=False)
+            user.is_supplier = form.cleaned_data["is_supplier"]  # Define se é fornecedor
+            user.save()
+            login(request, user)  # Loga automaticamente após o cadastro
+            return redirect("techhub")  # Redireciona para a página principal
     else:
-        context["pedidos"] = Order.objects.filter(user=user)
+        form = CustomUserCreationForm()
 
-    return HttpResponse(render(request, template, context))
+    return render(request, "auth/register.html", {"form": form})
 
-@api_view(['POST'])
-def register_supplier(request):
-    """Registro de novos fornecedores"""
-    serializer = UserCreateSerializer(data=request.data)
-    if serializer.is_valid():
-        # Salva o usuário
-        user = serializer.save()
+# Página inicial protegida
+@login_required
+def techhub(request):
+    return HttpResponse("Bem-vindo ao TechHub!")
 
-        # Definir o usuário como fornecedor
-        user.is_supplier = True
+# Atualização de perfil
+@login_required
+def update_profile(request):
+    user = request.user
+
+    if request.method == 'POST':
+        user.first_name = request.POST.get('first_name', user.first_name)
+        user.last_name = request.POST.get('last_name', user.last_name)
+        user.email = request.POST.get('email', user.email)
         user.save()
 
-        # Criar o perfil de fornecedor
-        SupplierProfile.objects.create(user=user)
+        # Atualizando informações do fornecedor, se aplicável
+        if user.is_supplier:
+            user.supplier.phone = request.POST.get('phone', user.supplier.phone)
+            user.supplier.address = request.POST.get('address', user.supplier.address)
+            user.supplier.save()
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return redirect('profile')
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return render(request, 'auth/update_profile.html', {'user': user})
 
+# Histórico de Pedidos
+@login_required
+def order_history(request):
+    orders = Order.objects.filter(user=request.user).order_by('-created_at')  # Buscar pedidos do usuário logado
+    return render(request, 'auth/order_history.html', {'orders': orders})
 
-@api_view(['POST', 'PUT'])
-@permission_classes([IsAuthenticated])
-def create_or_update_supplier_profile(request):
-    """Criação ou atualização do perfil de fornecedor"""
-    
-    if not request.user.is_supplier:
-        return Response({"detail": "Apenas fornecedores podem criar ou atualizar seu perfil."}, status=403)
+# Adicionar produto ao carrinho
+@login_required
+def add_to_cart(request, product_id):
+    product = Product.objects.get(id=product_id)
+    cart, created = Cart.objects.get_or_create(user=request.user, status='Pending')
 
-    try:
-        profile = SupplierProfile.objects.get(user=request.user)
-    except SupplierProfile.DoesNotExist:
-        profile = None
+    # Verificar se o item já existe no carrinho
+    cart_item, created = CartItem.objects.get_or_create(cart=cart, product=product)
+    if not created:
+        cart_item.quantity += 1  # Se já existir, aumente a quantidade
+    cart_item.price = product.price
+    cart_item.save()
 
-    if profile:
-        serializer = SupplierProfileSerializer(profile, data=request.data, partial=True)
+    return redirect('view_cart')
+
+# Visualizar o carrinho de compras
+@login_required
+def view_cart(request):
+    cart = Cart.objects.filter(user=request.user, status='Pending').first()
+    if cart:
+        cart_items = cart.items.all()
     else:
-        serializer = SupplierProfileSerializer(data=request.data)
+        cart_items = []
+    return render(request, 'auth/view_cart.html', {'cart_items': cart_items})
 
-    if serializer.is_valid():
-        serializer.save(user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED if not profile else status.HTTP_200_OK)
-
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def register_product(request):
-    """Registro de novos produtos para fornecedores via API."""
-    if not request.user.is_supplier:
-        return Response({"detail": "Apenas fornecedores podem registrar produtos."}, status=403)
-
-    serializer = ProductSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(supplier=request.user.supplier)
-        return Response(serializer.data, status=201)
-    return Response(serializer.errors, status=400)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_orders(request):
-    """Listagem de pedidos do usuário logado."""
-    user = request.user
-    if user.is_supplier:
-        return Response({"detail": "Fornecedores não têm acesso a pedidos pessoais."}, status=403)
-
-    orders = Order.objects.filter(user=user)
-    serializer = OrderSerializer(orders, many=True)
-    return Response(serializer.data)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
+# Criar pedido a partir do carrinho
+@login_required
 def create_order(request):
-    """Criação de um novo pedido pelo usuário logado."""
-    user = request.user
-    if user.is_supplier:
-        return Response({"detail": "Fornecedores não podem criar pedidos."}, status=403)
+    cart = Cart.objects.filter(user=request.user, status='Pending').first()
+    if not cart:
+        return redirect('view_cart')
 
-    order_data = {'user': user, 'status': 'Pending'}
-    order_serializer = OrderSerializer(data=order_data)
+    # Criar um novo pedido
+    order = Order.objects.create(user=request.user, status='Pending')
 
-    if order_serializer.is_valid():
-        order = order_serializer.save()
-        for item_data in request.data.get('items', []):
-            try:
-                product = Product.objects.get(id=item_data['product_id'])
-                OrderItem.objects.create(order=order, product=product, quantity=item_data['quantity'], price=product.price, subtotal=product.price * item_data['quantity'])
-            except Product.DoesNotExist:
-                return Response({"detail": f"Produto com ID {item_data['product_id']} não encontrado."}, status=404)
+    # Adicionar itens do carrinho para o pedido
+    for cart_item in cart.items.all():
+        OrderItem.objects.create(order=order, product=cart_item.product, quantity=cart_item.quantity,
+                                 price=cart_item.price)
 
-        return Response(order_serializer.data, status=status.HTTP_201_CREATED)
+    # Atualizar o status do carrinho
+    cart.status = 'Completed'
+    cart.save()
 
-    return Response(order_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return redirect('view_order', order_id=order.id)
 
-@api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
-def update_order_status(request, order_id):
-    """Atualização do status de um pedido existente."""
-    try:
-        order = Order.objects.get(id=order_id)
-    except Order.DoesNotExist:
-        return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+# Visualizar pedido
+@login_required
+def view_order(request, order_id):
+    order = Order.objects.get(id=order_id)
+    return render(request, 'auth/view_order.html', {'order': order})
 
-    if order.user != request.user and not request.user.is_staff:
-        return Response({"detail": "Você não tem permissão para alterar o status deste pedido."}, status=status.HTTP_403_FORBIDDEN)
+# Simular pagamento
+@login_required
+def simulate_payment(request, order_id):
+    order = Order.objects.get(id=order_id)
+    if order.user == request.user and order.status != 'Completed':
+        order.status = 'Completed'  # Simulando o pagamento
+        order.save()
 
-    valid_statuses = ["Pending", "Completed", "Cancelled"]
-    new_status = request.data.get('status')
+    return redirect('view_order', order_id=order.id)
 
-    if new_status not in valid_statuses:
-        return Response({"detail": "Status inválido. Use 'Pending', 'Completed' ou 'Cancelled'."}, status=status.HTTP_400_BAD_REQUEST)
+# Adicionar produto (para fornecedores)
+@login_required
+def add_product(request):
+    if not request.user.is_supplier:
+        return HttpResponse("Acesso negado", status=403)
 
-    order.status = new_status
-    order.save()
+    if request.method == 'POST':
+        form = ProductForm(request.POST)
+        if form.is_valid():
+            product = form.save(commit=False)
+            product.supplier = request.user  # Associar o produto ao fornecedor logado
+            product.save()
+            return redirect('product_list')
+    else:
+        form = ProductForm()
 
-    return Response({"detail": f"Status do pedido atualizado para '{new_status}'."}, status=status.HTTP_200_OK)
+    return render(request, 'auth/add_product.html', {'form': form})
 
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def update_product(request, product_id):
-    """Atualiza os detalhes de um produto do fornecedor"""
-    try:
-        product = Product.objects.get(id=product_id)
-    except Product.DoesNotExist:
-        return Response({"detail": "Produto não encontrado."}, status=404)
+# Editar produto (para fornecedores)
+@login_required
+def edit_product(request, product_id):
+    if not request.user.is_supplier:
+        return HttpResponse("Acesso negado", status=403)
 
-    if product.supplier.user != request.user:
-        return Response({"detail": "Você não tem permissão para editar este produto."}, status=403)
+    product = get_object_or_404(Product, id=product_id)
 
-    serializer = ProductSerializer(product, data=request.data, partial=True)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=200)
+    if product.supplier != request.user:
+        return HttpResponse("Acesso negado", status=403)
 
-    return Response(serializer.errors, status=400)
+    if request.method == 'POST':
+        form = ProductForm(request.POST, instance=product)
+        if form.is_valid():
+            form.save()
+            return redirect('product_list')
+    else:
+        form = ProductForm(instance=product)
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+    return render(request, 'auth/edit_product.html', {'form': form, 'product': product})
+
+# Excluir produto (para fornecedores)
+@login_required
 def delete_product(request, product_id):
-    """Deleta um produto do fornecedor"""
-    try:
-        product = Product.objects.get(id=product_id)
-    except Product.DoesNotExist:
-        return Response({"detail": "Produto não encontrado."}, status=404)
+    if not request.user.is_supplier:
+        return HttpResponse("Acesso negado", status=403)
 
-    if product.supplier.user != request.user:
-        return Response({"detail": "Você não tem permissão para excluir este produto."}, status=403)
+    product = get_object_or_404(Product, id=product_id)
+
+    if product.supplier != request.user:
+        return HttpResponse("Acesso negado", status=403)
 
     product.delete()
-    return Response({"detail": "Produto deletado com sucesso."}, status=204)
+    return redirect('product_list')
+
+# Listar produtos (para fornecedores)
+@login_required
+def product_list(request):
+    if not request.user.is_supplier:
+        return HttpResponse("Acesso negado", status=403)
+
+    products = Product.objects.filter(supplier=request.user)
+    return render(request, 'auth/product_list.html', {'products': products})
